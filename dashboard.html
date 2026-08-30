@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>TIMDR EV Predict — Dashboard</title>
+<style>
+  :root{
+    --bg: #0e1420;
+    --panel: #161e2d;
+    --panel-border: #253248;
+    --text: #e6edf5;
+    --muted: #8393ab;
+    --ok: #35d488;
+    --warn: #f5a623;
+    --crit: #ef4b5f;
+    --accent: #4f9dff;
+    --battery: #4f9dff;
+    --motor: #f5a623;
+    --charging: #35d488;
+    --mono: "Consolas","SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  html, body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI",Arial,sans-serif; padding:10px 14px 12px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:8px;
+  }
+  header h1{ font-size:15px; margin:0; font-weight:600; letter-spacing:.3px; }
+  header .sub{ color:var(--muted); font-size:10px; font-family:var(--mono); }
+  .status-pill{
+    padding:3px 10px; border-radius:14px; font-size:10px; font-weight:700;
+    letter-spacing:.4px; text-transform:uppercase; white-space:nowrap;
+  }
+  .status-ok{ background:rgba(53,212,136,.15); color:var(--ok); border:1px solid var(--ok); }
+  .status-warn{ background:rgba(245,166,35,.15); color:var(--warn); border:1px solid var(--warn); }
+  .status-crit{ background:rgba(239,75,95,.15); color:var(--crit); border:1px solid var(--crit); }
+
+  .toprow{ display:flex; gap:8px; align-items:stretch; flex-wrap:wrap; }
+
+  .controls{
+    display:grid; grid-template-columns:repeat(3,minmax(140px,1fr)); gap:8px;
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:8px; padding:8px 10px; flex:2 1 420px;
+  }
+  .controls .group{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .controls .group label{ font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
+  .controls select{
+    background:#0c121d; border:1px solid var(--panel-border); color:var(--text);
+    border-radius:5px; padding:4px 6px; font-size:11px; width:100%;
+  }
+  .scenario-desc{ font-size:9px; color:var(--muted); margin-top:1px; font-style:italic; min-height:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #err{ color:var(--crit); font-size:11px; font-family:var(--mono); white-space:pre-wrap; }
+  #vehicleStatusRow{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:11px; }
+  #analyzeStatus{ font-size:11px; color:var(--muted); font-style:italic; }
+
+  .cards{
+    display:grid; grid-template-columns:repeat(2,minmax(130px,1fr)); gap:8px;
+    flex:1 1 220px;
+  }
+  .card{
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:8px;
+    padding:8px 10px; position:relative; overflow:hidden;
+  }
+  .card .label{ font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
+  .card .value{ font-size:18px; font-weight:700; margin-top:2px; font-family:var(--mono); }
+  .card .sub2{ font-size:9px; color:var(--muted); margin-top:2px; }
+  .card .bar{ height:4px; border-radius:2px; background:#0c121d; margin-top:6px; overflow:hidden; }
+  .card .bar-fill{ height:100%; border-radius:2px; transition:width .3s ease; }
+
+  #liveMonitorPanel{ padding:6px 10px; }
+  #liveMonitorPanel h2{ font-size:11px; margin:0 0 4px; }
+  #liveMonitorPanel .meta{ font-size:11px !important; gap:12px !important; }
+
+  .subsystems-row{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+    flex:1 1 auto; min-height:0;
+  }
+  .subsystem{
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:8px;
+    padding:8px 10px; display:flex; flex-direction:column; min-width:0;
+  }
+  .subsystem h2{ font-size:11px; margin:0 0 2px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .subsystem h2 .dot{ display:inline-block; width:8px; height:8px; border-radius:50%; flex:none; }
+  .subsystem .meta{ font-size:9px; color:var(--muted); font-family:var(--mono); margin-bottom:4px; display:flex; gap:8px; flex-wrap:wrap; }
+  .subsystem .empty-msg{ color:var(--muted); font-size:11px; font-style:italic; padding:8px 0; }
+  .subsystem canvas{ flex:1 1 auto; min-height:0; }
+  canvas{ max-width:100%; display:block; width:100%; }
+  footer{ color:var(--muted); font-size:9px; font-family:var(--mono); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🚗 TIMDR EV Predict</h1>
+    <div class="sub">bateria + silnik elektryczny + ładowanie/sieć → jeden wynik zdrowia pojazdu (najsłabsze ogniwo)</div>
+  </div>
+  <div id="vehicleStatusPill" class="status-pill status-ok">brak danych</div>
+</header>
+
+<div class="toprow">
+  <div class="controls">
+    <div class="group">
+      <label>🔋 bateria</label>
+      <select id="selBattery"></select>
+      <div class="scenario-desc" id="descBattery"></div>
+    </div>
+    <div class="group">
+      <label>⚙️ silnik elektryczny</label>
+      <select id="selMotor"></select>
+      <div class="scenario-desc" id="descMotor"></div>
+    </div>
+    <div class="group">
+      <label>🔌 ładowanie / sieć</label>
+      <select id="selCharging"></select>
+      <div class="scenario-desc" id="descCharging"></div>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Zdrowie pojazdu</div>
+      <div class="value"><span id="valVehicleHealth">—</span></div>
+      <div class="bar"><div id="barVehicleHealth" class="bar-fill" style="width:0%"></div></div>
+      <div class="sub2">najsłabszy: <span id="valWeakestSubsystem">—</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Time to failure</div>
+      <div class="value"><span id="valVehicleTTF">—</span></div>
+      <div class="sub2">podsystem: <span id="valSoonestSubsystem">—</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="vehicleStatusRow">
+  <span id="analyzeStatus"></span>
+  <span id="err"></span>
+</div>
+
+<div class="subsystem" id="liveMonitorPanel" style="display:none; flex:none;">
+  <h2>📡 Live (monitor_ev.py / ev_can_source.py)</h2>
+  <div class="meta" style="font-size:11px; gap:12px;">
+    <span>bateria: <span id="liveBattery" class="status-pill" style="display:none;"></span></span>
+    <span>silnik: <span id="liveMotor" class="status-pill" style="display:none;"></span></span>
+    <span>ładowanie: <span id="liveCharging" class="status-pill" style="display:none;"></span></span>
+    <span>zdrowie: <span id="liveVehicleHealth">—</span></span>
+    <span>TTF: <span id="liveVehicleTTF">—</span></span>
+    <span id="liveAlert" class="status-pill status-crit" style="display:none;">ALARM</span>
+  </div>
+</div>
+
+<div class="subsystems-row">
+<div class="subsystem" id="panelBattery">
+  <h2><span class="dot" style="background:var(--battery)"></span>Bateria</h2>
+  <div class="meta">
+    <span>health: <span id="battHealth">—</span></span>
+    <span>TTF: <span id="battTTF">—</span></span>
+    <span>anom.: <span id="battAnomalies">—</span></span>
+    <span>próg: <span id="battThreshold">—</span></span>
+  </div>
+  <canvas id="chartBattery" height="100"></canvas>
+</div>
+
+<div class="subsystem" id="panelMotor">
+  <h2><span class="dot" style="background:var(--motor)"></span>Silnik elektryczny</h2>
+  <div class="meta">
+    <span>health: <span id="motHealth">—</span></span>
+    <span>TTF: <span id="motTTF">—</span></span>
+    <span>anom.: <span id="motAnomalies">—</span></span>
+    <span>próg: <span id="motThreshold">—</span></span>
+  </div>
+  <canvas id="chartMotor" height="100"></canvas>
+</div>
+
+<div class="subsystem" id="panelCharging">
+  <h2><span class="dot" style="background:var(--charging)"></span>Ładowanie / sieć</h2>
+  <div class="meta">
+    <span>health: <span id="chgHealth">—</span></span>
+    <span>TTF: <span id="chgTTF">—</span></span>
+    <span>anom.: <span id="chgAnomalies">—</span></span>
+    <span>próg: <span id="chgThreshold">—</span></span>
+  </div>
+  <canvas id="chartCharging" height="100"></canvas>
+</div>
+</div>
+
+<footer>TIMDR-EV-Predict · lokalne API (Flask, 127.0.0.1:5000) · dane nie opuszczają tego komputera · wykresy rysowane własnym kodem (canvas), bez zależności od CDN · scenariusz baterii "REALNE dane" = prawdziwy pomiar NASA PCoE (ogniwo B0047), nie symulacja</footer>
+
+<script>
+'use strict';
+const COLORS = { ok:'#35d488', warn:'#f5a623', crit:'#ef4b5f', accent:'#4f9dff', muted:'#8393ab', grid:'#1c2536', axis:'#8393ab' };
+const NONE_VALUE = '__none__';
+let scenarios = [];
+const state = { battery: null, motor: null, charging: null }; // ostatnie wyniki /api/analyze per podsystem
+
+function showError(msg){
+  document.getElementById('err').textContent = msg;
+  if (msg) console.error('[TIMDR-EV dashboard]', msg);
+}
+
+function fmt(x, digits){
+  if (x === null || x === undefined || Number.isNaN(x)) return '—';
+  return Number(x).toFixed(digits === undefined ? 2 : digits);
+}
+
+// Patrz TIMDR-Industrial-Predict/static/dashboard.html po pelne
+// uzasadnienie tego formatu (h/min/s zamiast surowych sekund).
+function fmtDuration(totalSeconds){
+  if (totalSeconds === null || totalSeconds === undefined || !Number.isFinite(totalSeconds)) {
+    return { text: '∞', title: '' };
+  }
+  const raw = Number(totalSeconds);
+  if (raw < 60) return { text: fmt(raw, 1) + 's', title: '' };
+  const s = Math.round(raw);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  let text = '';
+  if (h > 0) text += h + 'h ';
+  text += m + 'min ' + sec + 's';
+  return { text, title: fmt(raw, 1) + 's' };
+}
+
+// ------------------------------------------------------------
+// Minimalny silnik wykresow (Canvas 2D, bez zaleznosci CDN) -
+// identyczny co do zasady dzialania z TIMDR-Industrial-Predict.
+// ------------------------------------------------------------
+function drawChart(canvas, opts){
+  if (!canvas) return;
+  const parentWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 400;
+  const cssWidth = Math.max(200, parentWidth);
+  const cssHeight = opts.height || 140;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const labels = opts.labels || [];
+  const n = labels.length;
+  const pad = { left: 42, right: 10, top: 8, bottom: 16 };
+  const plotW = Math.max(10, cssWidth - pad.left - pad.right);
+  const plotH = Math.max(10, cssHeight - pad.top - pad.bottom);
+
+  if (n === 0){
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('brak danych', cssWidth / 2, cssHeight / 2);
+    return;
+  }
+
+  const allY = [];
+  (opts.series || []).forEach(s => {
+    if (s.type === 'scatter'){
+      (s.points || []).forEach(p => { if (isFinite(p.y)) allY.push(p.y); });
+    } else {
+      (s.data || []).forEach(v => { if (v !== null && v !== undefined && isFinite(v)) allY.push(v); });
+    }
+  });
+  if (opts.hline !== undefined && opts.hline !== null && isFinite(opts.hline)) allY.push(opts.hline);
+  if (allY.length === 0){ allY.push(0, 1); }
+
+  let yMin = Math.min(...allY), yMax = Math.max(...allY);
+  if (yMin === yMax){ yMin -= 1; yMax += 1; }
+  const yPad = (yMax - yMin) * 0.1;
+  yMin -= yPad; yMax += yPad;
+
+  const xAt = i => pad.left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const yAt = v => pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  ctx.strokeStyle = COLORS.grid; ctx.lineWidth = 1;
+  ctx.fillStyle = COLORS.axis; ctx.font = '9px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const gridLines = 4;
+  for (let g = 0; g <= gridLines; g++){
+    const yy = pad.top + (g / gridLines) * plotH;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(pad.left + plotW, yy); ctx.stroke();
+    const val = yMax - (g / gridLines) * (yMax - yMin);
+    ctx.fillText(fmt(val, Math.abs(val) < 10 ? 2 : 1), pad.left - 4, yy);
+  }
+
+  if (opts.hline !== undefined && opts.hline !== null && isFinite(opts.hline)){
+    ctx.strokeStyle = opts.hlineColor || COLORS.crit;
+    ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+    const yy = yAt(opts.hline);
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(pad.left + plotW, yy); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  (opts.series || []).forEach(s => {
+    if (s.type === 'scatter'){
+      ctx.fillStyle = s.color;
+      (s.points || []).forEach(p => {
+        if (!isFinite(p.y)) return;
+        ctx.beginPath();
+        ctx.arc(xAt(p.i), yAt(p.y), 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      return;
+    }
+    ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.4;
+    ctx.beginPath();
+    let started = false;
+    (s.data || []).forEach((v, i) => {
+      if (v === null || v === undefined || !isFinite(v)){ started = false; return; }
+      const xx = xAt(i), yy = yAt(v);
+      if (!started){ ctx.moveTo(xx, yy); started = true; } else { ctx.lineTo(xx, yy); }
+    });
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = COLORS.axis; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = '9px monospace';
+  const xTicks = Math.min(6, n);
+  for (let k = 0; k < xTicks; k++){
+    const idx = Math.round(k * (n - 1) / Math.max(1, xTicks - 1));
+    ctx.fillText(fmt(labels[idx], 0), xAt(idx), pad.top + plotH + 2);
+  }
+}
+
+// ------------------------------------------------------------
+// Scenariusze
+// ------------------------------------------------------------
+async function loadScenarios(){
+  const res = await fetch('/api/scenarios');
+  if (!res.ok) throw new Error('nie udalo sie pobrac listy scenariuszy (HTTP ' + res.status + ')');
+  scenarios = await res.json();
+
+  const groups = { battery: [], motor: [], charging: [] };
+  scenarios.forEach(s => { if (groups[s.subsystem]) groups[s.subsystem].push(s); });
+
+  const fillSelect = (selId, list) => {
+    const sel = document.getElementById(selId);
+    const opts = [`<option value="${NONE_VALUE}">— brak / nie dotyczy —</option>`]
+      .concat(list.map(s => `<option value="${s.id}">${s.id}</option>`));
+    sel.innerHTML = opts.join('');
+    if (list.length) sel.value = list[0].id;
+  };
+  fillSelect('selBattery', groups.battery);
+  fillSelect('selMotor', groups.motor);
+  fillSelect('selCharging', groups.charging);
+  updateDescriptions();
+}
+
+function updateDescriptions(){
+  const pairs = [['selBattery', 'descBattery'], ['selMotor', 'descMotor'], ['selCharging', 'descCharging']];
+  pairs.forEach(([selId, descId]) => {
+    const id = document.getElementById(selId).value;
+    const s = scenarios.find(x => x.id === id);
+    document.getElementById(descId).textContent = s ? s.description : '';
+  });
+}
+
+// ------------------------------------------------------------
+// Analiza pelnego przebiegu: dla kazdego z 1-3 wybranych podsystemow
+// pobiera dane demo, analizuje, potem agreguje w wynik pojazdu.
+// Uruchamia sie automatycznie przy kazdej zmianie wyboru (bez
+// osobnego przycisku - ten sam wzorzec co w TIMDR-Industrial-Predict).
+// ------------------------------------------------------------
+async function analyzeSubsystem(scenarioId){
+  if (!scenarioId || scenarioId === NONE_VALUE) return null;
+  const demoRes = await fetch('/api/demo?scenario=' + encodeURIComponent(scenarioId));
+  const demo = await demoRes.json();
+  if (!demoRes.ok) throw new Error(demo.error || ('HTTP ' + demoRes.status));
+
+  const body = {
+    t: demo.t,
+    sensors: demo.sensors,
+    threshold: demo.default_threshold,
+    window: 60,
+  };
+  if (demo.calibrated_ref_n) body.calibrated_ref_n = demo.calibrated_ref_n;
+
+  const anRes = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const analysis = await anRes.json();
+  if (!anRes.ok) throw new Error(analysis.error || ('Błąd analizy (HTTP ' + anRes.status + ')'));
+  return { scenario: scenarioId, ...analysis };
+}
+
+function renderSubsystemPanel(prefix, canvasId, color, result){
+  const idHealth = { Battery: 'battHealth', Motor: 'motHealth', Charging: 'chgHealth' }[prefix];
+  const idTTF = { Battery: 'battTTF', Motor: 'motTTF', Charging: 'chgTTF' }[prefix];
+  const idAnom = { Battery: 'battAnomalies', Motor: 'motAnomalies', Charging: 'chgAnomalies' }[prefix];
+  const idThr = { Battery: 'battThreshold', Motor: 'motThreshold', Charging: 'chgThreshold' }[prefix];
+
+  if (!result){
+    document.getElementById(idHealth).textContent = '—';
+    document.getElementById(idTTF).textContent = '—';
+    document.getElementById(idAnom).textContent = '—';
+    document.getElementById(idThr).textContent = '—';
+    drawChart(document.getElementById(canvasId), { height: 100, labels: [] });
+    return;
+  }
+
+  document.getElementById(idHealth).textContent = fmt(result.health_score, 2);
+  const ttfFmt = fmtDuration(result.ttf);
+  const ttfEl = document.getElementById(idTTF);
+  ttfEl.textContent = ttfFmt.text;
+  ttfEl.title = ttfFmt.title;
+  document.getElementById(idAnom).textContent = result.anomaly_idx.length;
+  document.getElementById(idThr).textContent = fmt(result.threshold, 1);
+
+  const anomalyPoints = result.anomaly_idx.map(i => ({ i, y: result.E[i] }));
+  drawChart(document.getElementById(canvasId), {
+    height: 100,
+    labels: result.t,
+    hline: result.threshold,
+    hlineColor: COLORS.crit,
+    series: [
+      { data: result.E, color, width: 1.6 },
+      { type: 'scatter', color: COLORS.crit, points: anomalyPoints },
+    ],
+  });
+}
+
+function setVehicleStatus(healthScore){
+  const pill = document.getElementById('vehicleStatusPill');
+  pill.classList.remove('status-ok', 'status-warn', 'status-crit');
+  if (healthScore === null || healthScore === undefined){
+    pill.textContent = 'brak danych'; pill.classList.add('status-ok'); return;
+  }
+  if (healthScore >= 0.6){ pill.textContent = 'ok'; pill.classList.add('status-ok'); }
+  else if (healthScore >= 0.3){ pill.textContent = 'ostrzeżenie'; pill.classList.add('status-warn'); }
+  else { pill.textContent = 'krytyczny'; pill.classList.add('status-crit'); }
+}
+
+const SUBSYSTEM_LABEL = { battery: 'bateria', motor: 'silnik elektryczny', charging: 'ładowanie/sieć' };
+
+async function runFullAnalysis(){
+  showError('');
+  const statusEl = document.getElementById('analyzeStatus');
+  statusEl.textContent = '⏳ analizowanie…';
+  updateDescriptions();
+  try {
+    const idBattery = document.getElementById('selBattery').value;
+    const idMotor = document.getElementById('selMotor').value;
+    const idCharging = document.getElementById('selCharging').value;
+
+    const [battery, motor, charging] = await Promise.all([
+      analyzeSubsystem(idBattery),
+      analyzeSubsystem(idMotor),
+      analyzeSubsystem(idCharging),
+    ]);
+    state.battery = battery; state.motor = motor; state.charging = charging;
+
+    renderSubsystemPanel('Battery', 'chartBattery', COLORS.accent, battery);
+    renderSubsystemPanel('Motor', 'chartMotor', COLORS.warn, motor);
+    renderSubsystemPanel('Charging', 'chartCharging', COLORS.ok, charging);
+
+    const vehicleBody = {};
+    if (battery) vehicleBody.battery = battery;
+    if (motor) vehicleBody.motor = motor;
+    if (charging) vehicleBody.charging = charging;
+
+    if (Object.keys(vehicleBody).length === 0){
+      setVehicleStatus(null);
+      document.getElementById('valVehicleHealth').textContent = '—';
+      document.getElementById('valVehicleTTF').textContent = '—';
+      document.getElementById('valWeakestSubsystem').textContent = '—';
+      document.getElementById('valSoonestSubsystem').textContent = '—';
+      document.getElementById('barVehicleHealth').style.width = '0%';
+      statusEl.textContent = 'Wybierz co najmniej 1 podsystem.';
+      return;
+    }
+
+    const vehRes = await fetch('/api/vehicle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(vehicleBody),
+    });
+    const veh = await vehRes.json();
+    if (!vehRes.ok) throw new Error(veh.error || ('Błąd agregacji (HTTP ' + vehRes.status + ')'));
+
+    setVehicleStatus(veh.vehicle_health_score);
+    document.getElementById('valVehicleHealth').textContent = fmt(veh.vehicle_health_score, 2);
+    const bar = document.getElementById('barVehicleHealth');
+    const pct = Math.max(0, Math.min(1, veh.vehicle_health_score)) * 100;
+    bar.style.width = pct + '%';
+    bar.style.background = veh.vehicle_health_score >= 0.6 ? COLORS.ok : (veh.vehicle_health_score >= 0.3 ? COLORS.warn : COLORS.crit);
+    document.getElementById('valWeakestSubsystem').textContent = SUBSYSTEM_LABEL[veh.weakest_subsystem] || veh.weakest_subsystem;
+
+    const vehTtfFmt = fmtDuration(veh.vehicle_ttf);
+    const vehTtfEl = document.getElementById('valVehicleTTF');
+    vehTtfEl.textContent = vehTtfFmt.text;
+    vehTtfEl.title = vehTtfFmt.title;
+    document.getElementById('valSoonestSubsystem').textContent = SUBSYSTEM_LABEL[veh.soonest_subsystem] || veh.soonest_subsystem;
+
+    const now = new Date();
+    statusEl.textContent = '✓ przeanalizowano ' + now.toLocaleTimeString('pl-PL');
+  } catch (e) {
+    statusEl.textContent = '';
+    showError(e.message);
+  }
+}
+
+['selBattery', 'selMotor', 'selCharging'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => { runFullAnalysis(); });
+});
+window.addEventListener('resize', () => {
+  renderSubsystemPanel('Battery', 'chartBattery', COLORS.accent, state.battery);
+  renderSubsystemPanel('Motor', 'chartMotor', COLORS.warn, state.motor);
+  renderSubsystemPanel('Charging', 'chartCharging', COLORS.ok, state.charging);
+});
+
+// ------------------------------------------------------------
+// Panel "monitoring na zywo" - odpytuje /api/monitor/status co 5s.
+// Niezalezny od reki analizy powyzej (ktora dziala na danych DEMO):
+// jesli monitor_ev.py (osobny proces, zasilany np. przez
+// ev_can_source.py z realnego CAN/OBD-II) nigdy nie zapisal statusu,
+// panel po prostu zostaje ukryty - to nie jest blad dashboardu. Celowo
+// TYLKO wskazniki online/offline i wynik pojazdu - bez przycisku
+// start/stop monitoringu (monitor_ev.py to osobny, dlugozyjacy proces
+// poza dashboardem).
+// ------------------------------------------------------------
+function renderLiveSubsystemPill(elId, subStatus){
+  const el = document.getElementById(elId);
+  if (!subStatus){ el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.classList.remove('status-ok', 'status-crit');
+  if (subStatus.data_live === null || subStatus.data_live === undefined){
+    el.textContent = subStatus.checker_online === false ? '🔴 offline' : '🟡 aktywny (rytm nieznany)';
+    el.classList.add(subStatus.checker_online === false ? 'status-crit' : 'status-ok');
+  } else if (subStatus.data_live){
+    el.textContent = '🟢 live';
+    el.classList.add('status-ok');
+  } else {
+    const secs = subStatus.seconds_since_data_change;
+    el.textContent = '🔴 offline' + (secs != null ? ` (${Math.round(secs)}s)` : '');
+    el.classList.add('status-crit');
+  }
+}
+
+async function pollLiveMonitor(){
+  try{
+    const res = await fetch('/api/monitor/status');
+    const data = await res.json();
+    const panel = document.getElementById('liveMonitorPanel');
+    if (!data.running){ panel.style.display = 'none'; return; }
+    panel.style.display = '';
+
+    const subs = data.subsystems || {};
+    renderLiveSubsystemPill('liveBattery', subs.battery);
+    renderLiveSubsystemPill('liveMotor', subs.motor);
+    renderLiveSubsystemPill('liveCharging', subs.charging);
+
+    const veh = data.vehicle;
+    document.getElementById('liveVehicleHealth').textContent = veh ? fmt(veh.vehicle_health_score, 2) : '—';
+    const ttfFmt = fmtDuration(veh ? veh.vehicle_ttf : null);
+    const ttfEl = document.getElementById('liveVehicleTTF');
+    ttfEl.textContent = ttfFmt.text;
+    ttfEl.title = ttfFmt.title;
+    document.getElementById('liveAlert').style.display = data.alert ? '' : 'none';
+  }catch(e){
+    console.warn('[TIMDR-EV dashboard] live monitor poll nieudany', e);
+  }
+}
+pollLiveMonitor();
+setInterval(pollLiveMonitor, 5000);
+
+loadScenarios().then(runFullAnalysis).catch(e => showError(e.message));
+</script>
+</body>
+</html>
