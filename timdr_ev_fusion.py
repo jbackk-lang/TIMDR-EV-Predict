@@ -6,8 +6,8 @@ Fuzja wielu czujników maszyny (temperatura, wibracje, ciśnienie, prąd,
 detektorów TIMDR (twist, trend, anomalie, rytm) na tym sygnale.
 """
 
+import math
 import numpy as np
-from scipy.stats import norm
 
 
 class TIMDREVFusion:
@@ -288,7 +288,12 @@ class TIMDREVFusion:
             z = (s + 1) / np.sqrt(var_s)
         else:
             z = 0.0
-        p = 2 * (1 - norm.cdf(abs(z)))
+        # NAPRAWIONE: patrz TIMDR-Industrial-Predict/timdr_industrial_fusion.py
+        # (skad ten plik zostal przeniesiony) - scipy.stats.norm.cdf
+        # zastapione math.erfc (tozsamosc matematyczna dla rozkladu
+        # normalnego), zeby wyeliminowac jedyna zaleznosc od scipy w tym
+        # pliku - blokowana przez Device Guard/WDAC na maszynach firmowych.
+        p = math.erfc(abs(z) / math.sqrt(2))
         return float(s), float(z), float(p)
 
     def validate_window(self, sensors_window, alpha=0.05):
