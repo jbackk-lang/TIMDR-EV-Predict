@@ -1,16 +1,26 @@
 # TIMDR EV Predict
 
-Jeden wynik zdrowia i czasu-do-awarii dla **całego pojazdu
-elektrycznego**, złożony z trzech niezależnie monitorowanych
-podsystemów: **baterii**, **silnika elektrycznego** i **ładowania/sieci**.
-Rdzeń fuzji czujników i predykcji TTF to sprawdzony silnik z
-`TIMDR-Industrial-Predict` (wykrywanie trendu, anomalii, rytmu i
-gwałtownych zmian - "twist") - tu zastosowany trzykrotnie (raz na
-podsystem), a wyniki złożone w jeden wskaźnik zasadą **"najsłabsze
-ogniwo"**, nie średnią (patrz `HISTORIA_BLEDOW.md`, sekcja 3, po
-uzasadnienie).
+Lokalne narzędzie badawcze do obserwacji **akumulatora trakcyjnego,
+silnika elektrycznego i układu ładowania**. Łączy pomiary każdego
+podsystemu i pokazuje, gdzie sygnały odbiegają od odniesienia.
+Wspólny wskaźnik wskazuje najsłabszy z analizowanych podsystemów.
+Pole TTF pokazuje prognozowany czas przekroczenia ustawionego progu
+sygnału. Prognoza awarii rzeczywistego pojazdu wymaga osobnej walidacji.
 
-## 🔴 Program działa NA ŻYWO (dashboard + REST API)
+## Co sprawdzono dla pojazdów elektrycznych
+
+| Obszar | Wynik i rodzaj danych |
+|---|---|
+| Akumulator trakcyjny | **69 użytecznych cykli laboratoryjnych** ogniwa NASA B0047. Pojemność spadła z **1,674 do 1,157 Ah**. Próba wykazała, że odniesienie do mediany całej historii może odwrócić ocenę trendu. W scenariuszu użyto odniesienia z pierwszych pięciu cykli. [Dane i proweniencja](data/real_battery/README.md) · [NASA](https://data.nasa.gov/dataset/li-ion-battery-aging-datasets) |
+| Napęd elektryczny | W scenariuszach syntetycznych są zużycie łożysk i zwarcie międzyzwojowe. Sygnały wejściowe obejmują m.in. drgania, temperaturę uzwojeń i asymetrię prądu. Do oceny skuteczności na samochodzie potrzebne są oznaczone pomiary napędu. |
+| Ładowanie | Scenariusze syntetyczne pokazują zapad napięcia i przegrzanie złącza. Wyniki z demo opisują zachowanie algorytmu w zadanych warunkach. |
+| Elektronika i magistrala CAN | Test mostu potwierdził zapis wybranych sygnałów do CSV po dekodowaniu ramek plikiem DBC na wirtualnej magistrali. To sprawdzenie transmisji i interpretacji ramek. Podłączenie do samochodu wymaga właściwego opisu sygnałów dla danego modelu. [Test mostu CAN](test_ev_can_source.py) |
+
+**Próba prognozy pojemności B0047.** Po pierwszych 55 dostępnych cyklach odłożyliśmy 14 ostatnich. Na tym odcinku utrzymanie ostatniej zmierzonej pojemności dało średni błąd bezwzględny **0,028 Ah**, a ekstrapolacja trendu liniowego **0,150 Ah**. To porównanie dwóch prostych metod na jednym ogniwie. Wynik pokazuje, że prognozę trzeba porównywać z ostatnim pomiarem i sprawdzać na innych ogniwach.
+
+**Elektronika do dalszych prób.** Dla BMS przydadzą się zapis napięć ogniw, prąd i temperatura. Dla falownika warto zestawiać prądy fazowe, temperaturę oraz zadany i zmierzony moment, jeśli pojazd udostępnia te kanały. Dla układu ładowania przydadzą się napięcie, prąd i temperatura złącza. Skuteczność rozróżniania usterek tych podsystemów wymaga porównania z potwierdzoną diagnozą warsztatową.
+
+## Dashboard i REST API
 
 ```
 run.bat
@@ -22,10 +32,8 @@ każdego z trzech podsystemów (albo "— brak / nie dotyczy —", jeśli dany
 podsystem nie ma teraz danych, np. pojazd się nie ładuje) - analiza
 uruchamia się automatycznie po każdej zmianie, bez osobnego przycisku.
 
-Dashboard pokazuje: wynik zdrowia CAŁEGO POJAZDU i który podsystem jest
-za niego odpowiedzialny (najsłabsze ogniwo), przewidywany czas do awarii
-pojazdu w formacie godz/min/s, oraz osobny panel na podsystem z
-wykresem E(t), progiem i wykrytymi anomaliami.
+Dashboard pokazuje wspólny wskaźnik dla dostępnych podsystemów, modelowy
+czas przekroczenia progu oraz osobne wykresy E(t), progi i anomalie.
 
 ## Scenariusze demo
 
